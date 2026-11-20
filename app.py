@@ -1,11 +1,32 @@
 import streamlit as st
 import pandas as pd
+import requests
 from datetime import datetime, timezone
 from bot import fetch_market, build_snapshot, run_paper_cycle, load_state, reset_state, START_BALANCE
 
 st.set_page_config(page_title="DOGE AI SCALPER PRO", page_icon="🐕", layout="wide")
 st.title("🐕 DOGE AI SCALPER PRO")
 st.caption("نسخة تجريبية — Paper Trading فقط | Binance Spot | DOGE/USDT")
+
+if st.button("اختبار مصادر البيانات"):
+    sources = {
+        "Binance": "https://api.binance.com/api/v3/ping",
+        "CoinGecko": "https://api.coingecko.com/api/v3/simple/price?ids=dogecoin&vs_currencies=usd",
+        "CoinPaprika": "https://api.coinpaprika.com/v1/tickers/doge-dogecoin"
+    }
+
+    for name, url in sources.items():
+        try:
+            response = requests.get(url, timeout=15)
+            st.write(
+                name,
+                "Status:",
+                response.status_code
+            )
+            st.code(response.text[:500])
+        except Exception as e:
+            st.error(f"{name}: {type(e).__name__}: {e}")
+
 
 state = load_state()
 a,b,c,d = st.columns(4)
