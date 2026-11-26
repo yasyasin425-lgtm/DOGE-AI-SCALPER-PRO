@@ -26,7 +26,22 @@ if st.button("اختبار مصادر البيانات"):
             st.code(response.text[:500])
         except Exception as e:
             st.error(f"{name}: {type(e).__name__}: {e}")
+import requests
 
+if st.button("اختبار مصدر بيانات DOGE"):
+    try:
+        r = requests.get(
+            "https://api.exchange.coinbase.com/products/DOGE-USD/candles",
+            params={"granularity": 60},
+            timeout=15
+        )
+        st.write("HTTP Status:", r.status_code)
+        if r.status_code == 200:
+            st.write("عدد الشموع:", len(r.json()))
+        else:
+            st.code(r.text[:300])
+    except Exception as e:
+        st.error(f"فشل الاختبار: {e}")
 
 state = load_state()
 import requests
