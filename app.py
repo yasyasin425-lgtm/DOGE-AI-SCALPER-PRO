@@ -64,16 +64,31 @@ with right:
         st.session_state.pop("last_result", None)
         st.rerun()
 
+
 if "last_snapshot" in st.session_state:
     s = st.session_state["last_snapshot"]
     st.subheader("قراءة السوق")
+
     x1, x2, x3, x4 = st.columns(4)
     x1.metric("السعر", f'{s["price"]:.7f} USDT')
     x2.metric("RSI (1m)", f'{s["rsi"]:.1f}')
     x3.metric("EMA 9 / EMA 21", f'{s["ema9"]:.7f} / {s["ema21"]:.7f}')
     x4.metric("اتجاه 5 دقائق", s["trend_5m"])
-    st.write("**الإشارة:**", s["signal"], "—", s["reason"])
-    st.write("**القرار التجريبي:**", st.session_state.get("last_result", {}).get("message", "—"))
+
+    st.write("**الإشارة:**", s["signal"])
+    st.write("**قوة الإشارة:**", f'{s["score"]}/5')
+    st.write("**التقييم:**", s["quality"])
+    st.progress(s["score"] / 5)
+
+    st.write("**تفاصيل التحليل:**")
+    for name, passed in s["checks"].items():
+        st.write(("✅ " if passed else "❌ ") + name)
+
+    st.write("**سبب القرار:**", s["reason"])
+    st.write(
+        "**القرار التجريبي:**",
+        st.session_state.get("last_result", {}).get("message", "—")
+    )
 
 state = load_state()
 st.subheader("المحفظة التجريبية")
