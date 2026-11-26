@@ -39,22 +39,76 @@ def add_indicators(df):
     df["atr"] = tr.rolling(14).mean()
     return df
 
+
 def build_snapshot(df1, df5):
-    # Ignore the still-forming candle to reduce unstable signals.
+    # Ignore the still-forming candle
     a = df1.iloc[-2]
     b = df5.iloc[-2]
+
     price = float(a.close)
-    trend = "صاعد" if b.ema9 > b.ema21 else ("هابط" if b.ema9 < b.ema21 else "عرضي")
-    vol_ok = pd.notna(a.vol_avg) and a.volume > a.vol_avg * 0.8
-    momentum_ok = a.macd_hist > 0
-    if trend == "صاعد" and a.ema9 > a.ema21 and 45 <= a.rsi <= 68 and momentum_ok and vol_ok:
-        signal, reason = "BUY", "اتجاه 5m صاعد وتوافق EMA/RSI/MACD والحجم"
+
+    trend = (
+        "صاعد" if b.ema9 > b.ema21
+        else "هابط" if b.ema9 < b.ema21
+        else "عرضي"
+    )
+
+    checks = {
+        "اتجاه 5 دقائق صاعد": trend == "صاعد",
+        "EMA 9 أعلى من EMA 21": a.ema9 > a.ema21,
+        "RSI مناسب": 45 <= a.rsi <= 68,
+        "MACD إيجابي": a.macd_hist > 0,
+        "حجم التداول مناسب": (
+            pd.notna(a.vol_avg)
+            and a.volume > a.vol_avg * 0.8
+        ),
+    }
+
+    score = sum(checks.values())
+
+    if score == 5:
+        quality = "قوية جداً"
+    elif score == 4:
+        quality = "قوية"
+    elif score == 3:
+        quality = "متوسطة"
     else:
-        signal, reason = "HOLD", "شروط الدخول المحافظة غير مكتملة"
-    atr = float(a.atr) if pd.notna(a.atr) and a.atr > 0 else price * 0.003
-    return {"price":price, "rsi":float(a.rsi), "ema9":float(a.ema9), "ema21":float(a.ema21),
-            "trend_5m":trend, "signal":signal, "reason":reason, "atr":atr,
-            "candle_time":int(a.close_time)}
+        quality = "ضعيفة"
+
+    # Keep conservative entry rules
+    signal = "BUY" if score == 5 else "HOLD"
+
+    passed = [name for name, ok in checks.items() if ok]
+    failed = [name for name, ok in checks.items() if not ok]
+
+    reason = (
+        "الشروط المكتملة: " + "، ".join(passed)
+        if passed else "لم يكتمل أي شرط"
+    )
+
+    if failed:
+        reason += " | الشروط الناقصة: " + "، ".join(failed)
+
+    atr = (
+        float(a.atr)
+        if pd.notna(a.atr) and a.atr > 0
+        else price * 0.003
+    )
+
+    return {
+        "price": price,
+        "rsi": float(a.rsi),
+        "ema9": float(a.ema9),
+        "ema21": float(a.ema21),
+        "trend_5m": trend,
+        "signal": signal,
+        "reason": reason,
+        "atr": atr,
+        "candle_time": int(a.close_time),
+        "score": score,
+        "quality": quality,
+        "checks": checks,
+    }
 
 def load_state():
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
