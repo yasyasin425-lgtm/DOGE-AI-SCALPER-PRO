@@ -29,6 +29,25 @@ if st.button("اختبار مصادر البيانات"):
 
 
 state = load_state()
+import requests
+
+if st.button("اختبار مصدر بيانات DOGE"):
+    url = "https://api.exchange.coinbase.com/products/DOGE-USD/candles"
+    try:
+        r = requests.get(
+            url,
+            params={"granularity": 60},
+            timeout=15
+        )
+        st.write("HTTP Status:", r.status_code)
+        if r.status_code == 200:
+            data = r.json()
+            st.write("عدد الشموع:", len(data))
+            st.success("تم الوصول إلى بيانات DOGE العامة")
+        else:
+            st.code(r.text[:300])
+    except Exception as e:
+        st.error(f"فشل الاختبار: {e}")
 a,b,c,d = st.columns(4)
 a.metric("الرصيد الافتراضي", f'{state["balance"]:.2f} USDT')
 b.metric("الأرباح/الخسائر المحققة", f'{state["realized_pnl"]:.4f} USDT')
