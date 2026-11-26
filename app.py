@@ -90,7 +90,22 @@ st.subheader("سجل الصفقات")
 if state["trades"]:
     st.dataframe(pd.DataFrame(state["trades"]).iloc[::-1], use_container_width=True, hide_index=True)
 else:
-    st.write("لم تُسجل صفقات بعد. اضغط زر تحديث البيانات لبدء المحاكاة.")
+    
+st.write("**الإشارة:**", s["signal"])
+st.write("**قوة الإشارة:**", f'{s["score"]}/5')
+st.write("**التقييم:**", s["quality"])
+
+st.progress(s["score"] / 5)
+
+st.write("**تفاصيل التحليل:**")
+for name, passed in s["checks"].items():
+    if passed:
+        st.write("✅", name)
+    else:
+        st.write("❌", name)
+
+st.write("**سبب القرار:**", s["reason"])
+
 
 st.caption(f'آخر فتح للوحة: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}')
 
