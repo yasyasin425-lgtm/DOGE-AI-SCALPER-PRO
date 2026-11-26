@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime, timezone, date
 
 SYMBOL = "DOGEUSDT"
-BASE_URL = "https://api.binance.com/api/v3/klines"
+BASE_URL = "https://data-api.binance.vision/api/v3/klines"
 START_BALANCE = 100.0
 RISK_FRACTION = 0.005       # 0.5% risk per trade
 DAILY_LOSS_LIMIT = 0.02     # 2% daily stop
