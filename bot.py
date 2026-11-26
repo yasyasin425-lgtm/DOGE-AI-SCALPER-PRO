@@ -1,4 +1,5 @@
 
+
 import json
 import os
 import requests
@@ -13,37 +14,72 @@ from datetime import datetime, timezone, date
 # ==========================================
 
 SYMBOL = "DOGEUSDT"
-
-BASE_URL = (
-    "https://data-api.binance.vision/api/v3/klines"
-)
+BASE_URL = "https://data-api.binance.vision/api/v3/klines"
 
 START_BALANCE = 100.0
-
 RISK_FRACTION = 0.005
 DAILY_LOSS_LIMIT = 0.02
 FEE_RATE = 0.001
-
 MAX_POSITION_FRACTION = 0.25
 
-DATA_DIR = os.path.join(
-    os.path.dirname(__file__),
-    "data"
-)
-
-STATE_FILE = os.path.join(
-    DATA_DIR,
-    "paper_state.json"
-)
-
-SIGNAL_FILE = os.path.join(
-    DATA_DIR,
-    "signal_history.json"
-)
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+STATE_FILE = os.path.join(DATA_DIR, "paper_state.json")
+SIGNAL_FILE = os.path.join(DATA_DIR, "signal_history.json")
 
 
 # ==========================================
-# 2. BINANCE MARKET DATA
+# 2. JSON SAFE CONVERSION
+# ==========================================
+
+def json_safe(value):
+    """Convert NumPy and Pandas values into JSON-safe values."""
+
+    if isinstance(value, np.generic):
+        return value.item()
+
+    if isinstance(value, dict):
+        return {
+            str(key): json_safe(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return value.isoformat()
+
+    if value is pd.NA:
+        return None
+
+    return value
+
+
+def save_json(path, data):
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    safe_data = json_safe(data)
+
+    temp_path = path + ".tmp"
+
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(
+            safe_data,
+            f,
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False
+        )
+
+    os.replace(temp_path, path)
+
+
+# ==========================================
+# 3. BINANCE MARKET DATA
 # ==========================================
 
 def fetch_market(interval="1m", limit=300):
@@ -85,17 +121,8 @@ def fetch_market(interval="1m", limit=300):
 
     df = pd.DataFrame(raw, columns=columns)
 
-    for col in [
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume"
-    ]:
-        df[col] = pd.to_numeric(
-            df[col],
-            errors="coerce"
-        )
+    for col in ["open", "high", "low", "close", "volume"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df["close_time"] = pd.to_numeric(
         df["close_time"],
@@ -103,7 +130,7 @@ def fetch_market(interval="1m", limit=300):
     )
 
     df = df.dropna(
-        subset=["open", "high", "low", "close", "volume"]
+        subset=["open", "high", "low", "close", "volume", "close_time"]
     )
 
     if len(df) < 30:
@@ -113,14 +140,13 @@ def fetch_market(interval="1m", limit=300):
 
 
 # ==========================================
-# 3. TECHNICAL INDICATORS
+# 4. TECHNICAL INDICATORS
 # ==========================================
 
 def add_indicators(df):
 
     df = df.copy()
 
-    # EMA 9 and EMA 21
     df["ema9"] = df["close"].ewm(
         span=9,
         adjust=False
@@ -131,19 +157,14 @@ def add_indicators(df):
         adjust=False
     ).mean()
 
-    # RSI 14
     delta = df["close"].diff()
 
-    gain = delta.clip(
-        lower=0
-    ).ewm(
+    gain = delta.clip(lower=0).ewm(
         alpha=1 / 14,
         adjust=False
     ).mean()
 
-    loss = (-delta.clip(
-        upper=0
-    )).ewm(
+    loss = (-delta.clip(upper=0)).ewm(
         alpha=1 / 14,
         adjust=False
     ).mean()
@@ -154,7 +175,6 @@ def add_indicators(df):
         100 - (100 / (1 + rs))
     ).fillna(50)
 
-    # MACD
     fast = df["close"].ewm(
         span=12,
         adjust=False
@@ -174,12 +194,10 @@ def add_indicators(df):
 
     df["macd_hist"] = macd - signal_line
 
-    # Volume average
     df["vol_avg"] = df["volume"].rolling(
         window=20
     ).mean()
 
-    # ATR 14
     tr = pd.concat(
         [
             df["high"] - df["low"],
@@ -189,15 +207,13 @@ def add_indicators(df):
         axis=1
     ).max(axis=1)
 
-    df["atr"] = tr.rolling(
-        window=14
-    ).mean()
+    df["atr"] = tr.rolling(window=14).mean()
 
     return df
 
 
 # ==========================================
-# 4. MARKET SNAPSHOT AND SIGNAL SCORING
+# 5. MARKET SNAPSHOT AND SIGNAL SCORING
 # ==========================================
 
 def build_snapshot(df1, df5):
@@ -205,7 +221,6 @@ def build_snapshot(df1, df5):
     if len(df1) < 30 or len(df5) < 30:
         raise ValueError("Not enough candles for analysis.")
 
-    # Ignore unfinished candles
     a = df1.iloc[-2]
     b = df5.iloc[-2]
 
@@ -219,18 +234,11 @@ def build_snapshot(df1, df5):
         trend = "عرضي"
 
     checks = {
-        "اتجاه 5 دقائق صاعد": trend == "صاعد",
-
-        "EMA 9 أعلى من EMA 21":
-            a["ema9"] > a["ema21"],
-
-        "RSI مناسب":
-            45 <= a["rsi"] <= 68,
-
-        "MACD إيجابي":
-            a["macd_hist"] > 0,
-
-        "حجم التداول مناسب": (
+        "اتجاه 5 دقائق صاعد": bool(trend == "صاعد"),
+        "EMA 9 أعلى من EMA 21": bool(a["ema9"] > a["ema21"]),
+        "RSI مناسب": bool(45 <= a["rsi"] <= 68),
+        "MACD إيجابي": bool(a["macd_hist"] > 0),
+        "حجم التداول مناسب": bool(
             pd.notna(a["vol_avg"])
             and a["volume"] > a["vol_avg"] * 0.8
         )
@@ -247,17 +255,14 @@ def build_snapshot(df1, df5):
     else:
         quality = "ضعيفة"
 
-    # Conservative entry rule
     signal = "BUY" if score == 5 else "HOLD"
 
     passed = [
-        name for name, ok in checks.items()
-        if ok
+        name for name, ok in checks.items() if ok
     ]
 
     failed = [
-        name for name, ok in checks.items()
-        if not ok
+        name for name, ok in checks.items() if not ok
     ]
 
     reason = (
@@ -266,10 +271,7 @@ def build_snapshot(df1, df5):
     )
 
     if failed:
-        reason += (
-            " | الشروط الناقصة: "
-            + "، ".join(failed)
-        )
+        reason += " | الشروط الناقصة: " + "، ".join(failed)
 
     atr = (
         float(a["atr"])
@@ -294,7 +296,7 @@ def build_snapshot(df1, df5):
 
 
 # ==========================================
-# 5. PAPER PORTFOLIO MANAGEMENT
+# 6. PAPER PORTFOLIO MANAGEMENT
 # ==========================================
 
 def default_state():
@@ -318,17 +320,12 @@ def load_state():
         return default_state()
 
     try:
-        with open(
-            STATE_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
             state = json.load(f)
 
     except (json.JSONDecodeError, OSError):
         raise RuntimeError(
-            "تعذر قراءة ملف المحفظة التجريبية. "
-            "لا تحذف الملف قبل فحصه."
+            "تعذر قراءة ملف المحفظة التجريبية."
         )
 
     defaults = default_state()
@@ -340,21 +337,7 @@ def load_state():
 
 
 def save_state(state):
-
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-    with open(
-        STATE_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        json.dump(
-            state,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
+    save_json(STATE_FILE, state)
 
 
 def reset_state():
@@ -364,7 +347,7 @@ def reset_state():
 
 
 # ==========================================
-# 6. SIGNAL HISTORY
+# 7. SIGNAL HISTORY
 # ==========================================
 
 def load_signal_history():
@@ -375,12 +358,7 @@ def load_signal_history():
         return []
 
     try:
-        with open(
-            SIGNAL_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
+        with open(SIGNAL_FILE, "r", encoding="utf-8") as f:
             history = json.load(f)
 
         return history if isinstance(history, list) else []
@@ -390,21 +368,7 @@ def load_signal_history():
 
 
 def save_signal_history(history):
-
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-    with open(
-        SIGNAL_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        json.dump(
-            history,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
+    save_json(SIGNAL_FILE, history)
 
 
 def record_signal(snapshot):
@@ -413,48 +377,31 @@ def record_signal(snapshot):
 
     candle_time = int(snapshot["candle_time"])
 
-    # Avoid duplicate signals for the same candle
     for item in history:
-
         if int(item["candle_time"]) == candle_time:
             return
 
     history.append({
-
         "candle_time": candle_time,
-
         "recorded_at": datetime.now(
             timezone.utc
         ).isoformat(timespec="seconds"),
-
         "signal": snapshot.get("signal", "HOLD"),
-
         "price": float(snapshot["price"]),
-
         "score": int(snapshot.get("score", 0)),
-
-        "quality": snapshot.get(
-            "quality",
-            "غير متاح"
-        ),
-
-        "checks": snapshot.get("checks", {}),
-
+        "quality": snapshot.get("quality", "غير متاح"),
+        "checks": json_safe(snapshot.get("checks", {})),
         "evaluated": False,
-
         "outcome": None,
-
         "future_price": None,
-
         "return_pct": None
-
     })
 
     save_signal_history(history)
 
 
 # ==========================================
-# 7. EVALUATE SIGNALS AFTER FIVE MINUTES
+# 8. EVALUATE SIGNALS AFTER FIVE MINUTES
 # ==========================================
 
 def update_signal_outcomes(df1):
@@ -496,10 +443,8 @@ def update_signal_outcomes(df1):
 
         entry_price = float(item["price"])
 
-        # Five minutes after the signal candle
         target_time = (
-            int(item["candle_time"])
-            + 5 * 60 * 1000
+            int(item["candle_time"]) + 5 * 60 * 1000
         )
 
         future_rows = market[
@@ -514,23 +459,19 @@ def update_signal_outcomes(df1):
         )
 
         return_pct = (
-            (future_price - entry_price)
-            / entry_price
+            (future_price - entry_price) / entry_price
         ) * 100
 
         signal = item.get("signal", "HOLD")
 
         if signal == "BUY":
-
             if return_pct > 0:
                 outcome = "نجاح"
             elif return_pct < 0:
                 outcome = "خسارة"
             else:
                 outcome = "تعادل"
-
         else:
-
             if return_pct < 0:
                 outcome = "تجنب خسارة"
             elif return_pct > 0:
@@ -554,15 +495,13 @@ def update_signal_outcomes(df1):
 
 
 # ==========================================
-# 8. PAPER TRADING ENGINE
+# 9. PAPER TRADING ENGINE
 # ==========================================
 
 def run_paper_cycle(snapshot, df1=None):
 
-    # Save every new signal
     record_signal(snapshot)
 
-    # Evaluate older signals when market data is supplied
     if df1 is not None:
         update_signal_outcomes(df1)
 
@@ -570,37 +509,25 @@ def run_paper_cycle(snapshot, df1=None):
 
     today = str(date.today())
 
-    # Reset daily tracking on a new day
     if state["day"] != today:
-
         state["day"] = today
-
         state["day_start_balance"] = state["balance"]
-
         state["daily_realized_pnl"] = 0.0
 
-    # Daily loss protection
     daily_limit = (
-        state["day_start_balance"]
-        * DAILY_LOSS_LIMIT
+        state["day_start_balance"] * DAILY_LOSS_LIMIT
     )
 
     if state["daily_realized_pnl"] <= -daily_limit:
-
         save_state(state)
-
         return {
             "message": "توقف حماية: تم بلوغ حد الخسارة اليومي."
         }
 
     position = state["position"]
-
     price = float(snapshot["price"])
 
-    # --------------------------------------
     # Manage existing position
-    # --------------------------------------
-
     if position:
 
         exit_reason = None
@@ -630,32 +557,22 @@ def run_paper_cycle(snapshot, df1=None):
 
             pnl = gross - fees
 
-            # Return sale proceeds to virtual balance
             state["balance"] += (
-                qty * price
-                - qty * price * FEE_RATE
+                qty * price - qty * price * FEE_RATE
             )
 
             state["realized_pnl"] += pnl
-
             state["daily_realized_pnl"] += pnl
 
             state["trades"].append({
-
                 "وقت الإغلاق": datetime.now(
                     timezone.utc
                 ).isoformat(timespec="seconds"),
-
                 "الدخول": round(entry, 7),
-
                 "الخروج": round(price, 7),
-
                 "الكمية": round(qty, 2),
-
                 "النتيجة USDT": round(pnl, 5),
-
                 "سبب الإغلاق": exit_reason
-
             })
 
             state["position"] = None
@@ -678,10 +595,7 @@ def run_paper_cycle(snapshot, df1=None):
             )
         }
 
-    # --------------------------------------
     # Check entry signal
-    # --------------------------------------
-
     if snapshot["signal"] != "BUY":
 
         save_state(state)
@@ -690,18 +604,13 @@ def run_paper_cycle(snapshot, df1=None):
             "message": "لا دخول: الإشارة الحالية HOLD."
         }
 
-    # --------------------------------------
     # Calculate conservative position size
-    # --------------------------------------
-
     stop_distance = max(
         snapshot["atr"] * 1.2,
         price * 0.0015
     )
 
-    risk_cash = (
-        state["balance"] * RISK_FRACTION
-    )
+    risk_cash = state["balance"] * RISK_FRACTION
 
     qty = risk_cash / stop_distance
 
@@ -710,20 +619,15 @@ def run_paper_cycle(snapshot, df1=None):
     )
 
     max_qty = (
-        max_position_value
-        / (price * (1 + FEE_RATE))
+        max_position_value / (price * (1 + FEE_RATE))
     )
 
     qty = min(qty, max_qty)
 
     cost = qty * price
-
     fee = cost * FEE_RATE
 
-    if (
-        qty <= 0
-        or cost + fee > state["balance"]
-    ):
+    if qty <= 0 or cost + fee > state["balance"]:
 
         save_state(state)
 
@@ -735,21 +639,14 @@ def run_paper_cycle(snapshot, df1=None):
 
     target = price + stop_distance * 1.2
 
-    # Deduct virtual purchase cost and fee
     state["balance"] -= cost + fee
 
     state["position"] = {
-
         "entry": price,
-
         "qty": qty,
-
         "stop": price - stop_distance,
-
         "target": target,
-
         "entry_fee": fee
-
     }
 
     save_state(state)
@@ -761,4 +658,3 @@ def run_paper_cycle(snapshot, df1=None):
             f"وهدف {target:.7f}."
         )
     }
-
