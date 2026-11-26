@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone
@@ -11,123 +12,300 @@ from bot import (
     START_BALANCE,
 )
 
-st.set_page_config(page_title="DOGE AI SCALPER PRO", page_icon="🐕", layout="wide")
+# --------------------------------
+# Page configuration
+# --------------------------------
+
+st.set_page_config(
+    page_title="DOGE AI SCALPER PRO",
+    page_icon="🐕",
+    layout="wide",
+)
+
 st.title("🐕 DOGE AI SCALPER PRO")
 st.caption("Binance Spot | DOGE/USDT | Paper Trading فقط")
 
 st.warning(
-    "هذه نسخة تجريبية لا تنفذ تداولاً حقيقياً. "
-    "تجلب بيانات السوق العامة من Binance ولا تحتاج إلى API Key لجلب الشموع."
+    "هذه نسخة تجريبية فقط. لا تنفذ صفقات حقيقية. "
+    "بيانات السوق العامة من Binance ولا تحتاج إلى API Key."
 )
 
-state = load_state()
-a, b, c, d = st.columns(4)
-a.metric("الرصيد الافتراضي", f'{state["balance"]:.2f} USDT')
-b.metric("الأرباح/الخسائر المحققة", f'{state["realized_pnl"]:.4f} USDT')
-c.metric("الصفقات المغلقة", str(len(state["trades"])))
-d.metric("الوضع", "محاكاة فقط")
+# --------------------------------
+# Portfolio overview
+# --------------------------------
+
+try:
+    state = load_state()
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "الرصيد الافتراضي",
+        f'{state["balance"]:.2f} USDT'
+    )
+
+    col2.metric(
+        "الأرباح والخسائر",
+        f'{state["realized_pnl"]:.4f} USDT'
+    )
+
+    col3.metric(
+        "الصفقات المغلقة",
+        str(len(state["trades"]))
+    )
+
+    col4.metric("الوضع", "محاكاة فقط")
+
+except Exception as exc:
+    st.error(f"خطأ في قراءة المحفظة: {exc}")
+    st.stop()
+
+st.divider()
+
+# --------------------------------
+# Main controls
+# --------------------------------
 
 left, right = st.columns(2)
 
 with left:
-    if st.button("تحديث البيانات وتحليل السوق", type="primary", use_container_width=True):
-        with st.spinner("جاري جلب بيانات DOGE/USDT من Binance..."):
-            try:
-                df1 = fetch_market("1m", 300)
-                df5 = fetch_market("5m", 200)
-                if df1 is None or df5 is None or len(df1) < 30 or len(df5) < 30:
-                    st.error("وصلت بيانات غير كافية من Binance لإجراء التحليل.")
-                else:
-                    snap = build_snapshot(df1, df5)
-                    result = run_paper_cycle(snap)
-                    st.session_state["last_snapshot"] = snap
-                    st.session_state["last_result"] = result
-                    st.success("اكتمل تحليل السوق وتحديث المحاكاة.")
-            except Exception as exc:
-                message = str(exc)
-                if "451" in message:
-                    st.error(
-                        "Binance أعادت الخطأ 451. هذا رفض وصول من جهة الخدمة/الخادم، "
-                        "وليس بسبب عدم وجود API Key. لم يتم تنفيذ أي تداول."
-                    )
-                    st.info(
-                        "أبقينا Binance كما طلبت. تغيير app.py وحده لا يزيل قيد 451؛ "
-                        "سنفحص عنوان واجهة بيانات Binance واتصال خادم Streamlit في الخطوة التالية."
-                    )
-                else:
-                    st.error(f"تعذر جلب البيانات أو تحليلها: {type(exc).__name__}: {message}")
+    update_clicked = st.button(
+        "تحديث البيانات وتحليل السوق",
+        type="primary",
+        use_container_width=True
+    )
 
 with right:
-    if st.button("إعادة ضبط المحفظة التجريبية", use_container_width=True):
-        reset_state()
-        st.session_state.pop("last_snapshot", None)
-        st.session_state.pop("last_result", None)
-        st.rerun()
+    reset_clicked = st.button(
+        "إعادة ضبط المحفظة التجريبية",
+        use_container_width=True
+    )
 
+if reset_clicked:
+    reset_state()
+    st.session_state.pop("last_snapshot", None)
+    st.session_state.pop("last_result", None)
+    st.success("تمت إعادة ضبط المحفظة التجريبية.")
+    st.rerun()
+
+# --------------------------------
+# Fetch Binance market data
+# --------------------------------
+
+if update_clicked:
+
+    with st.spinner("جاري تحليل DOGE/USDT من Binance..."):
+
+        try:
+            df1 = fetch_market("1m", 300)
+            df5 = fetch_market("5m", 200)
+
+            if df1 is None or df5 is None:
+                st.error("لم تصل بيانات السوق.")
+            
+            elif len(df1) < 30 or len(df5) < 30:
+                st.error("بيانات Binance غير كافية للتحليل.")
+
+            else:
+                snapshot = build_snapshot(df1, df5)
+
+                result = run_paper_cycle(snapshot)
+
+                st.session_state["last_snapshot"] = snapshot
+                st.session_state["last_result"] = result
+
+                st.success("اكتمل تحليل السوق بنجاح.")
+
+        except Exception as exc:
+
+            error_message = str(exc)
+
+            if "451" in error_message:
+                st.error(
+                    "Binance رفضت الاتصال بالخطأ 451. "
+                    "المشكلة في الوصول إلى الخدمة وليست في API Key."
+                )
+
+            elif "429" in error_message:
+                st.error(
+                    "طلبات كثيرة إلى Binance. انتظر قليلاً ثم أعد المحاولة."
+                )
+
+            else:
+                st.error(
+                    f"حدث خطأ: {type(exc).__name__}: {error_message}"
+                )
+
+# --------------------------------
+# Market analysis
+# --------------------------------
 
 if "last_snapshot" in st.session_state:
+
     s = st.session_state["last_snapshot"]
-    st.subheader("قراءة السوق")
 
-    x1, x2, x3, x4 = st.columns(4)
-    x1.metric("السعر", f'{s["price"]:.7f} USDT')
-    x2.metric("RSI (1m)", f'{s["rsi"]:.1f}')
-    x3.metric("EMA 9 / EMA 21", f'{s["ema9"]:.7f} / {s["ema21"]:.7f}')
-    x4.metric("اتجاه 5 دقائق", s["trend_5m"])
+    st.divider()
+    st.subheader("📊 تحليل السوق")
 
-    st.write("**الإشارة:**", s["signal"])
-    st.write("**قوة الإشارة:**", f'{s["score"]}/5')
-    st.write("**التقييم:**", s["quality"])
-    st.progress(s["score"] / 5)
+    a, b, c, d = st.columns(4)
 
-    st.write("**تفاصيل التحليل:**")
-    for name, passed in s["checks"].items():
-        st.write(("✅ " if passed else "❌ ") + name)
+    a.metric(
+        "السعر الحالي",
+        f'{s["price"]:.7f} USDT'
+    )
 
-    st.write("**سبب القرار:**", s["reason"])
+    b.metric(
+        "RSI - دقيقة",
+        f'{s["rsi"]:.2f}'
+    )
+
+    c.metric(
+        "EMA 9",
+        f'{s["ema9"]:.7f}'
+    )
+
+    d.metric(
+        "EMA 21",
+        f'{s["ema21"]:.7f}'
+    )
+
     st.write(
-        "**القرار التجريبي:**",
-        st.session_state.get("last_result", {}).get("message", "—")
+        "**اتجاه 5 دقائق:**",
+        s.get("trend_5m", "غير متاح")
     )
 
-state = load_state()
-st.subheader("المحفظة التجريبية")
-if state["position"]:
-    p = state["position"]
-    st.info(
-        f'صفقة مفتوحة افتراضياً: {p["qty"]:.2f} DOGE عند {p["entry"]:.7f} USDT '
-        f'| وقف: {p["stop"]:.7f} | هدف: {p["target"]:.7f}'
-    )
-else:
-    st.write("لا توجد صفقة مفتوحة حالياً.")
+    st.divider()
 
-st.subheader("سجل الصفقات")
-if state["trades"]:
-    st.dataframe(pd.DataFrame(state["trades"]).iloc[::-1], use_container_width=True, hide_index=True)
-else:
-    
-st.write("**الإشارة:**", s["signal"])
-st.write("**قوة الإشارة:**", f'{s["score"]}/5')
-st.write("**التقييم:**", s["quality"])
+    # Signal quality
+    st.subheader("🎯 تقييم الإشارة")
 
-st.progress(s["score"] / 5)
+    signal = s.get("signal", "HOLD")
+    score = int(s.get("score", 0))
+    score = max(0, min(score, 5))
 
-st.write("**تفاصيل التحليل:**")
-for name, passed in s["checks"].items():
-    if passed:
-        st.write("✅", name)
+    quality = s.get("quality", "غير متاح")
+
+    x, y, z = st.columns(3)
+
+    x.metric("الإشارة", signal)
+    y.metric("قوة الإشارة", f"{score}/5")
+    z.metric("جودة الإشارة", quality)
+
+    st.progress(score / 5)
+
+    # Signal conditions
+    st.write("**تفاصيل الشروط الفنية:**")
+
+    checks = s.get("checks", {})
+
+    if checks:
+
+        for name, passed in checks.items():
+
+            if passed:
+                st.success(f"✅ {name}")
+
+            else:
+                st.warning(f"❌ {name}")
+
     else:
-        st.write("❌", name)
 
-st.write("**سبب القرار:**", s["reason"])
+        st.info(
+            "تفاصيل تقييم الشروط غير متاحة. "
+            "تحقق من تحديث build_snapshot في bot.py."
+        )
 
+    st.write("**سبب الإشارة:**")
+    st.write(s.get("reason", "لا يوجد تفسير متاح."))
 
-st.caption(f'آخر فتح للوحة: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}')
+    # Paper trading decision
+    st.divider()
+    st.subheader("🤖 قرار المحاكاة")
 
-with st.expander("إعدادات النسخة التجريبية"):
-    st.write(f"- رأس المال الابتدائي: {START_BALANCE:.2f} USDT")
-    st.write("- مخاطرة الصفقة: 0.5% من الرصيد")
-    st.write("- حد الخسارة اليومي: 2% من رصيد بداية اليوم")
-    st.write("- رسوم المحاكاة: 0.1% لكل جهة (قابلة للتعديل في bot.py)")
-    st.write("- الإطار: دقيقة للدخول و5 دقائق لتأكيد الاتجاه")
-    st.write("- لا يوجد تعلم آلي ذاتي أو تداول حقيقي في هذه النسخة.")
+    result = st.session_state.get("last_result", {})
+
+    st.info(
+        result.get("message", "لم يصدر قرار تجريبي بعد.")
+    )
+
+# --------------------------------
+# Paper portfolio
+# --------------------------------
+
+st.divider()
+st.subheader("💰 المحفظة التجريبية")
+
+try:
+    state = load_state()
+
+    position = state.get("position")
+
+    if position:
+
+        st.info(
+            f'صفقة مفتوحة افتراضياً: '
+            f'{position["qty"]:.2f} DOGE '
+            f'| سعر الدخول: {position["entry"]:.7f} USDT '
+            f'| وقف الخسارة: {position["stop"]:.7f} '
+            f'| الهدف: {position["target"]:.7f}'
+        )
+
+    else:
+
+        st.write("لا توجد صفقة مفتوحة حالياً.")
+
+except Exception as exc:
+
+    st.error(f"تعذر تحميل المحفظة: {exc}")
+
+# --------------------------------
+# Trade history
+# --------------------------------
+
+st.divider()
+st.subheader("📜 سجل الصفقات")
+
+try:
+
+    state = load_state()
+    trades = state.get("trades", [])
+
+    if trades:
+
+        history = pd.DataFrame(trades)
+
+        st.dataframe(
+            history.iloc[::-1],
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+
+        st.write("لم تُسجل صفقات مغلقة حتى الآن.")
+
+except Exception as exc:
+
+    st.error(f"تعذر عرض سجل الصفقات: {exc}")
+
+# --------------------------------
+# Settings
+# --------------------------------
+
+st.divider()
+
+with st.expander("⚙️ إعدادات النسخة التجريبية"):
+
+    st.write(f"رأس المال الابتدائي: {START_BALANCE:.2f} USDT")
+    st.write("المخاطرة لكل صفقة: 0.5%")
+    st.write("حد الخسارة اليومي: 2%")
+    st.write("رسوم المحاكاة: 0.1% لكل جهة")
+    st.write("إطار الدخول: دقيقة واحدة")
+    st.write("تأكيد الاتجاه: 5 دقائق")
+    st.write("التداول الحقيقي: غير مفعل")
+    st.write("التعلم الآلي: غير مفعل حالياً")
+
+st.caption(
+    "DOGE AI SCALPER PRO | "
+    + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+)
