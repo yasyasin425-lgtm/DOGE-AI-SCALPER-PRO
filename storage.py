@@ -175,3 +175,76 @@ def reset_state():
         "Wallet reset is disabled."
     )
 
+
+# ATOMIC CLOUD STORAGE
+
+def commit_engine_cycle(
+    candle_time,
+    expected_state,
+    new_state,
+    signals,
+    *,
+    enable_write=False
+):
+
+    if enable_write is not True:
+        raise RuntimeError(
+            "Engine writes are disabled."
+        )
+
+    if not isinstance(expected_state, dict):
+        raise RuntimeError(
+            "Invalid expected wallet."
+        )
+
+    if not isinstance(new_state, dict):
+        raise RuntimeError(
+            "Invalid updated wallet."
+        )
+
+    if not isinstance(signals, list):
+        raise RuntimeError(
+            "Invalid signal history."
+        )
+
+    payload = {
+        "p_candle_time": int(candle_time),
+        "p_expected_state": expected_state,
+        "p_state": new_state,
+        "p_signals": signals,
+    }
+
+    result = request_db(
+        method="POST",
+        table="rpc/commit_engine_cycle",
+        payload=payload,
+    )
+
+    if result is True:
+        return True
+
+    if result is False:
+        return False
+
+    raise RuntimeError(
+        "Unexpected database response."
+    )
+
+
+def load_last_engine_candle():
+
+    rows = request_db(
+        method="GET",
+        table="engine_cycles",
+        params={
+            "select": "candle_time",
+            "order": "candle_time.desc",
+            "limit": 1,
+        },
+    )
+
+    if not rows:
+        return None
+
+    return int(rows[0]["candle_time"])
+
