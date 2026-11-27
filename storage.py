@@ -60,9 +60,18 @@ def request_db(method, table, params=None,
         timeout=20
     )
 
-    if not response.ok:
+        if not response.ok:
+        try:
+            error = response.json()
+            code = str(error.get("code", "UNKNOWN"))
+            if not code.isalnum():
+                code = "UNKNOWN"
+        except Exception:
+            code = "UNKNOWN"
+
         raise RuntimeError(
-            f"Supabase error: HTTP {response.status_code}"
+            f"Supabase HTTP {response.status_code}"
+            f" | Error code: {code}"
         )
 
     if response.content:
