@@ -2,11 +2,10 @@
 import os
 import requests
 
-# ==========================================
+
 # DOGE AI SCALPER PRO
-# SUPABASE CLOUD STORAGE
+# SUPABASE STORAGE
 # PAPER TRADING ONLY
-# ==========================================
 
 
 def get_secret(name):
@@ -31,7 +30,7 @@ def get_config():
             "Supabase configuration is missing."
         )
 
-    return url.rstrip("/"), key
+    return url.strip().rstrip("/"), key.strip()
 
 
 def request_db(method, table, params=None,
@@ -42,7 +41,8 @@ def request_db(method, table, params=None,
     headers = {
         "apikey": key,
         "Content-Type": "application/json",
-        "Accept": "application/json"
+        "Accept": "application/json",
+        "Accept-Profile": "public"
     }
 
     if not key.startswith("sb_secret_"):
@@ -60,12 +60,14 @@ def request_db(method, table, params=None,
         timeout=20
     )
 
-        if not response.ok:
+    if not response.ok:
         try:
             error = response.json()
             code = str(error.get("code", "UNKNOWN"))
+
             if not code.isalnum():
                 code = "UNKNOWN"
+
         except Exception:
             code = "UNKNOWN"
 
@@ -79,10 +81,6 @@ def request_db(method, table, params=None,
 
     return None
 
-
-# ==========================================
-# 1. LOAD WALLET
-# ==========================================
 
 def load_state():
 
@@ -108,20 +106,11 @@ def load_state():
     return state
 
 
-# ==========================================
-# 2. SAVE WALLET
-# ==========================================
-
 def save_state(state):
-
     raise RuntimeError(
         "Wallet writes disabled during migration."
     )
 
-
-# ==========================================
-# 3. LOAD SIGNAL HISTORY
-# ==========================================
 
 def load_signal_history():
 
@@ -154,20 +143,11 @@ def load_signal_history():
     return history
 
 
-# ==========================================
-# 4. SAVE SIGNAL HISTORY
-# ==========================================
-
 def save_signal_history(history):
-
     raise RuntimeError(
         "Signal writes disabled during migration."
     )
 
-
-# ==========================================
-# 5. CONNECTION TEST
-# ==========================================
 
 def test_connection():
 
@@ -190,12 +170,8 @@ def test_connection():
     }
 
 
-# ==========================================
-# 6. RESET PROTECTION
-# ==========================================
-
 def reset_state():
-
     raise RuntimeError(
         "Wallet reset is disabled."
     )
+
