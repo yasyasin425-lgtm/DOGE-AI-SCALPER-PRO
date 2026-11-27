@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime
 
 from bot import (
@@ -52,6 +53,32 @@ if reset_button:
     reset_state()
     st.success("تمت إعادة ضبط المحفظة التجريبية.")
     st.rerun()
+
+st.divider()
+st.subheader("💾 حفظ نسخة احتياطية من المحاكاة")
+st.caption(
+    "نزّل ملفات المحفظة وسجل الإشارات قبل نقل التشغيل. "
+    "هذه الخطوة لا تغيّر الرصيد أو الصفقات."
+)
+
+backup_state = load_state()
+backup_history = load_signal_history()
+
+st.download_button(
+    "⬇️ تنزيل نسخة المحفظة والصفقات",
+    data=json.dumps(backup_state, ensure_ascii=False, indent=2),
+    file_name="doge_paper_state.json",
+    mime="application/json",
+    use_container_width=True,
+)
+
+st.download_button(
+    "⬇️ تنزيل سجل الإشارات",
+    data=json.dumps(backup_history, ensure_ascii=False, indent=2),
+    file_name="doge_signal_history.json",
+    mime="application/json",
+    use_container_width=True,
+)
 
 # -----------------------------
 # جلب بيانات السوق
