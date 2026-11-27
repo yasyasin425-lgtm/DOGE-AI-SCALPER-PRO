@@ -21,9 +21,33 @@ jobs:
 
       - run: pip install requests
 
-      - name: Test Supabase connection
+      - name: Test Supabase V2
         env:
-          SUPABASE_URL: "https://lfsvkgbbulorwpsjsfbk.supabase.co"
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL_V2 }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_V2 }}
         run: |
-          python -c "import storage; print(storage.test_connection())"
+          python - <<'PY'
+          import storage
+
+          url, key = storage.get_config()
+
+          expected = "https://lfsvkgbbulorwpsjsfbk.supabase.co"
+
+          print("URL matches:", url == expected)
+          print("Secret key:", key.startswith("sb_secret_"))
+
+          if url != expected:
+              raise RuntimeError("Incorrect project URL")
+
+          if not key.startswith("sb_secret_"):
+              raise RuntimeError("Incorrect key type")
+
+          result = storage.test_connection()
+
+          print("Connected:", result["connected"])
+          print("Wallet verified:", abs(result["balance"] - 75.24457009867103) < 0.000001)
+          print("Signals count:", result["signals_count"])
+          print("Closed trades:", result["closed_trades"])
+          print("Open position:", result["open_position"])
+          print("Writes enabled:", result["writes_enabled"])
+          PY
