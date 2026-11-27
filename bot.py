@@ -1101,3 +1101,18 @@ def run_paper_cycle(snapshot, df1=None):
             f"العائد إلى المخاطرة {REWARD_RISK_RATIO}:1."
         )
     }
+
+# ==========================================
+# TEMPORARY MIGRATION PROTECTION
+# ==========================================
+
+def run_paper_cycle(snapshot, df1=None):
+    return {
+        "message": "التداول متوقف مؤقتاً أثناء نقل البيانات."
+    }
+
+
+def reset_state():
+    raise RuntimeError(
+        "إعادة ضبط المحفظة معطلة أثناء نقل البيانات."
+    )
