@@ -21,52 +21,9 @@ jobs:
 
       - run: pip install requests
 
-      - name: Diagnose Supabase API
+      - name: Test Supabase connection
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL: "https://lfsvkgbbulorwpsjsfbk.supabase.co"
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          python - <<'PY'
-          import os
-          import requests
-
-          url = os.environ["SUPABASE_URL"].strip().rstrip("/")
-          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"].strip()
-
-          expected = "https://lfsvkgbbulorwpsjsfbk.supabase.co"
-
-          print("URL matches:", url == expected)
-          print("Secret key:", key.startswith("sb_secret_"))
-
-          if url != expected:
-              raise SystemExit("Incorrect project URL")
-
-          headers = {"apikey": key}
-
-          if not key.startswith("sb_secret_"):
-              headers["Authorization"] = "Bearer " + key
-
-          for path in [
-              "/rest/v1/",
-              "/rest/v1/bot_state?select=id",
-              "/rest/v1/signal_history?select=id&limit=1"
-          ]:
-              r = requests.get(
-                  url + path,
-                  headers=headers,
-                  timeout=20,
-                  allow_redirects=False
-              )
-
-              print("Endpoint:", path)
-              print("HTTP:", r.status_code)
-              print("Content-Type:", r.headers.get("Content-Type"))
-
-              if not r.ok:
-                  try:
-                      data = r.json()
-                      code = str(data.get("code", "UNKNOWN"))
-                      print("Error code:", code if code.isalnum() and len(code) < 20 else "UNKNOWN")
-                  except Exception:
-                      print("Non-JSON response")
-          PY
+          python -c "import storage; print(storage.test_connection())"
