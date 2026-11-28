@@ -1,13 +1,13 @@
 
 """
 DOGE AI SCALPER PRO
-Paper Trading Engine V1
+Paper Trading Engine V2
+Decimal Precision
 SIMULATION ONLY
 """
 
-import math
-
 from copy import deepcopy
+from decimal import localcontext
 from datetime import datetime, timezone
 
 from config import (
@@ -17,12 +17,23 @@ from config import (
     MAX_SIGNAL_AGE_SECONDS,
 )
 
+from money import (
+    ZERO,
+    decimal_value,
+    debit_balance,
+    credit_balance,
+)
+
 from risk import (
     calculate_equity,
     calculate_position,
     calculate_exit,
 )
 
+
+# =====================================
+# SAFETY AND TIME
+# =====================================
 
 def utc_time(timestamp):
 
@@ -41,9 +52,45 @@ def validate_mode():
         )
 
 
-def update_daily_state(state, timestamp, price):
+def normalize_state(original_state):
 
-    today = utc_time(timestamp).date().isoformat()
+    state = deepcopy(original_state)
+
+    fields = [
+        "balance",
+        "realized_pnl",
+        "day_start_balance",
+        "daily_realized_pnl",
+    ]
+
+    for field in fields:
+
+        state[field] = decimal_value(
+            state[field]
+        )
+
+    if state["balance"] < ZERO:
+
+        raise RuntimeError(
+            "Negative wallet balance."
+        )
+
+    return state
+
+
+# =====================================
+# DAILY RISK MANAGEMENT
+# =====================================
+
+def update_daily_state(
+    state,
+    timestamp,
+    price,
+):
+
+    today = utc_time(
+        timestamp
+    ).date().isoformat()
 
     if state.get("day") != today:
 
@@ -53,13 +100,19 @@ def update_daily_state(state, timestamp, price):
             calculate_equity(state, price)
         )
 
-        state["daily_realized_pnl"] = 0.0
+        state["daily_realized_pnl"] = ZERO
 
+
+# =====================================
+# SIGNAL RECORDING
+# =====================================
 
 def build_signal(snapshot):
 
     return {
-        "candle_time": int(snapshot["candle_time"]),
+        "candle_time": int(
+            snapshot["candle_time"]
+        ),
 
         "recorded_at": datetime.now(
             timezone.utc
@@ -67,13 +120,17 @@ def build_signal(snapshot):
 
         "signal": snapshot["signal"],
 
-        "price": float(snapshot["price"]),
+        "price": decimal_value(
+            snapshot["price"]
+        ),
 
         "score": int(snapshot["score"]),
 
         "quality": snapshot["quality"],
 
-        "checks": snapshot["checks"],
+        "checks": deepcopy(
+            snapshot["checks"]
+        ),
 
         "strategy_version": snapshot.get(
             "strategy_version", "1.0"
@@ -89,6 +146,10 @@ def build_signal(snapshot):
     }
 
 
+# =====================================
+# CLOSE POSITION
+# =====================================
+
 def close_position(
     state,
     exit_price,
@@ -96,77 +157,100 @@ def close_position(
     candle_time,
 ):
 
-    position = state["position"]
+    with localcontext() as ctx:
 
-    result = calculate_exit(
-        position,
-        exit_price,
-    )
+        ctx.prec = 50
 
-    pnl = result["net_pnl"]
+        position = state["position"]
 
-    state["balance"] += result["proceeds"]
+        exit_price = decimal_value(
+            exit_price
+        )
 
-    state["realized_pnl"] += pnl
+        result = calculate_exit(
+            position,
+            exit_price,
+        )
 
-    state["daily_realized_pnl"] += pnl
+        pnl = result["net_pnl"]
 
-    trade = {
-        "وقت الإغلاق": utc_time(
-            candle_time
-        ).isoformat(),
+        state["balance"] = credit_balance(
+            state["balance"],
+            result["proceeds"],
+        )
 
-        "الدخول": float(position["entry"]),
+        state["realized_pnl"] += pnl
 
-        "الخروج": float(exit_price),
+        state["daily_realized_pnl"] += pnl
 
-        "الكمية": round(
-            float(position["qty"]), 4
-        ),
+        trade = {
+            "وقت الإغلاق": utc_time(
+                candle_time
+            ).isoformat(),
 
-        "رسوم الدخول": round(
-            result["entry_fee"], 6
-        ),
+            "الدخول": decimal_value(
+                position["entry"]
+            ),
 
-        "رسوم الخروج": round(
-            result["exit_fee"], 6
-        ),
+            "الخروج": exit_price,
 
-        "النتيجة USDT": round(pnl, 6),
+            "الكمية": decimal_value(
+                position["qty"]
+            ),
 
-        "سبب الإغلاق": reason,
+            "رسوم الدخول":
+                result["entry_fee"],
 
-        "entry_candle_time": position[
-            "entry_candle_time"
-        ],
+            "رسوم الخروج":
+                result["exit_fee"],
 
-        "exit_candle_time": candle_time,
+            "النتيجة USDT": pnl,
 
-        "estimated_execution": True,
+            "سبب الإغلاق": reason,
 
-        "paper_trading": True,
+            "entry_candle_time": int(
+                position["entry_candle_time"]
+            ),
 
-        "strategy_version": position.get(
-            "strategy_version", "1.0"
-        ),
-    }
+            "exit_candle_time": candle_time,
 
-    state["closed_trades"].append(trade)
+            "estimated_execution": True,
 
-    state["trades"] = deepcopy(
-        state["closed_trades"]
-    )
+            "paper_trading": True,
 
-    state["position"] = None
+            "precision_version": "2.0",
 
-    return {
-        "action": "SELL",
-        "reason": reason,
-        "net_pnl": pnl,
-    }
+            "strategy_version": position.get(
+                "strategy_version", "1.0"
+            ),
+        }
+
+        state["closed_trades"].append(
+            trade
+        )
+
+        state["trades"] = deepcopy(
+            state["closed_trades"]
+        )
+
+        state["position"] = None
+
+        return {
+            "action": "SELL",
+            "reason": reason,
+            "net_pnl": pnl,
+        }
 
 
-def manage_position(state, candles, candle_time):
+# =====================================
+# POSITION MONITORING
+# =====================================
+
+def manage_position(
+    state,
+    candles,
+    candle_time,
+):
 
     position = state["position"]
 
@@ -196,13 +280,19 @@ def manage_position(state, candles, candle_time):
 
     expected = last_checked + 60000
 
-    stop = float(position["stop"])
+    stop = decimal_value(
+        position["stop"]
+    )
 
-    target = float(position["target"])
+    target = decimal_value(
+        position["target"]
+    )
 
     for _, row in rows.iterrows():
 
-        timestamp = int(row["close_time"])
+        timestamp = int(
+            row["close_time"]
+        )
 
         if timestamp != expected:
 
@@ -212,13 +302,31 @@ def manage_position(state, candles, candle_time):
 
         expected += 60000
 
-        opening = float(row["open"])
+        opening = decimal_value(
+            row["open"]
+        )
 
-        high = float(row["high"])
+        high = decimal_value(
+            row["high"]
+        )
 
-        low = float(row["low"])
+        low = decimal_value(
+            row["low"]
+        )
 
-        close = float(row["close"])
+        close = decimal_value(
+            row["close"]
+        )
+
+        if (
+            low <= ZERO
+            or high < max(opening, close)
+            or low > min(opening, close)
+        ):
+
+            raise RuntimeError(
+                "Invalid candle prices."
+            )
 
         update_daily_state(
             state,
@@ -262,11 +370,9 @@ def manage_position(state, candles, candle_time):
                 timestamp,
             )
 
-        elapsed = (
-            timestamp - entry_time
-        ) / 60000
+        elapsed = timestamp - entry_time
 
-        if elapsed >= MAX_TRADE_MINUTES:
+        if elapsed >= MAX_TRADE_MINUTES * 60000:
 
             return close_position(
                 state,
@@ -291,6 +397,10 @@ def manage_position(state, candles, candle_time):
     }
 
 
+# =====================================
+# MAIN PAPER TRADING CYCLE
+# =====================================
+
 def run_cycle(
     original_state,
     snapshot,
@@ -299,15 +409,19 @@ def run_cycle(
 
     validate_mode()
 
-    state = deepcopy(original_state)
+    state = normalize_state(
+        original_state
+    )
 
     candle_time = int(
         snapshot["candle_time"]
     )
 
-    price = float(snapshot["price"])
+    price = decimal_value(
+        snapshot["price"]
+    )
 
-    if not math.isfinite(price) or price <= 0:
+    if price <= ZERO:
 
         raise RuntimeError(
             "Invalid market price."
@@ -357,9 +471,10 @@ def run_cycle(
 
             if position is not None:
 
-                state["balance"] -= position[
-                    "total_cost"
-                ]
+                state["balance"] = debit_balance(
+                    state["balance"],
+                    position["total_cost"],
+                )
 
                 position["entry_candle_time"] = (
                     candle_time
@@ -375,7 +490,8 @@ def run_cycle(
 
                 position["strategy_version"] = (
                     snapshot.get(
-                        "strategy_version", "1.0"
+                        "strategy_version",
+                        "1.0",
                     )
                 )
 
@@ -399,13 +515,11 @@ def run_cycle(
         price,
     )
 
-    if not math.isfinite(state["balance"]):
+    balance = decimal_value(
+        state["balance"]
+    )
 
-        raise RuntimeError(
-            "Invalid resulting balance."
-        )
-
-    if state["balance"] < 0:
+    if balance < ZERO:
 
         raise RuntimeError(
             "Negative wallet balance."
