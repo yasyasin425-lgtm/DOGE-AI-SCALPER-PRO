@@ -1,8 +1,8 @@
 
 """
 DOGE AI SCALPER PRO
-Cloud Engine V4
-Decimal Precision
+Cloud Engine V5
+Market Execution Validation
 DRY RUN - PAPER TRADING ONLY
 """
 
@@ -25,6 +25,11 @@ from storage import (
 )
 
 from strategy import analyze_market
+
+from execution import (
+    fetch_execution_price,
+    validate_entry,
+)
 
 from paper_engine import run_cycle
 
@@ -130,21 +135,80 @@ def validate_precision(state):
 
 
 # =====================================
+# EXECUTION VALIDATION
+# =====================================
+
+def prepare_execution(state, snapshot):
+
+    prepared = deepcopy(snapshot)
+
+    prepared["execution"] = {
+        "allowed": False,
+        "reason": "Entry not required",
+    }
+
+    if state.get("position") is not None:
+
+        return prepared
+
+    if snapshot["signal"] != "BUY":
+
+        return prepared
+
+    try:
+
+        quote = fetch_execution_price()
+
+        execution = validate_entry(
+            snapshot,
+            quote,
+        )
+
+    except Exception as error:
+
+        execution = {
+            "allowed": False,
+            "reason": "Market quote unavailable",
+        }
+
+        print(
+            "Execution protection:",
+            type(error).__name__,
+        )
+
+    prepared["execution"] = execution
+
+    if execution["allowed"]:
+
+        print("Market quote: OK")
+        print("Spread protection: OK")
+        print("Price deviation protection: OK")
+        print("Entry validation: PASSED")
+
+    else:
+
+        print(
+            "Entry blocked:",
+            execution["reason"],
+        )
+
+    return prepared
+
+
+# =====================================
 # MAIN ENGINE
 # =====================================
 
 def main():
 
     print("DOGE AI SCALPER PRO")
-    print("Cloud Engine V4")
+    print("Cloud Engine V5")
     print("MODE: DRY RUN")
     print("PRECISION: DECIMAL")
 
     validate_safety()
 
     print("Safety configuration: OK")
-
-    # Load original cloud data
 
     state = load_state_exact()
 
@@ -164,9 +228,6 @@ def main():
 
     print("Supabase connection: OK")
     print("Exact wallet loaded: OK")
-    print("Wallet precision: OK")
-
-    # Analyze Binance market
 
     snapshot, candles = analyze_market()
 
@@ -189,11 +250,25 @@ def main():
     print("Signal:", snapshot["signal"])
     print("Score:", snapshot["score"], "/ 5")
 
-    # Simulate trading cycle
+    # Prepare execution information
+
+    prepared = prepare_execution(
+        state,
+        snapshot,
+    )
+
+    # Temporary entry protection
+    # Until Paper Engine V3 is installed
+
+    simulation = deepcopy(prepared)
+
+    if state.get("position") is None:
+
+        simulation["signal"] = "HOLD"
 
     result = run_cycle(
         state,
-        snapshot,
+        simulation,
         candles,
     )
 
@@ -205,24 +280,25 @@ def main():
 
     validate_precision(simulated_state)
 
-    if not isinstance(
-        simulated_state["balance"],
-        Decimal,
-    ):
-
-        raise RuntimeError(
-            "Decimal balance required."
-        )
-
-    print("Risk management V2: OK")
-    print("Paper Engine V2: OK")
+    print("Risk management: OK")
     print("Financial precision: OK")
+
     print(
         "Simulated action:",
         decision["action"],
     )
 
-    # Evaluate signal history
+    # Preserve original market signal
+
+    for item in result["signals"]:
+
+        item["signal"] = snapshot["signal"]
+
+        item["execution"] = deepcopy(
+            prepared["execution"]
+        )
+
+    # Signal history evaluation
 
     combined = {
         int(item["candle_time"]):
@@ -260,12 +336,13 @@ def main():
 
     print("Signal evaluation: OK")
     print("Learning module: OK")
+
     print(
         "Learning status:",
         report["status"],
     )
 
-    # Verify original data protection
+    # Protect original cloud data
 
     if state != original_state:
 
@@ -303,9 +380,10 @@ def main():
     print("Original wallet unchanged: OK")
     print("Cloud history unchanged: OK")
     print("Engine checkpoint unchanged: OK")
+    print("New entries: TEMPORARILY DISABLED")
     print("Database writes: DISABLED")
     print("Live trading: DISABLED")
-    print("Cloud Engine V4: SUCCESS")
+    print("Cloud Engine V5: SUCCESS")
 
 
 if __name__ == "__main__":
