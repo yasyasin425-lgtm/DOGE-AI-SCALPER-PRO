@@ -24,10 +24,27 @@ jobs:
 
       - name: Check Python files
         run: |
-          python -m py_compile config.py money.py risk.py strategy.py paper_engine.py learning.py storage.py engine.py test_paper_engine.py test_precision.py
+          python -m py_compile \
+            config.py \
+            money.py \
+            risk.py \
+            strategy.py \
+            execution.py \
+            exit_monitor.py \
+            paper_engine.py \
+            paper_engine_v3.py \
+            learning.py \
+            storage.py \
+            engine.py \
+            test_paper_engine.py \
+            test_execution.py \
+            test_precision.py
 
       - name: Run 17 Paper Engine Tests
         run: python -m unittest -v test_paper_engine
+
+      - name: Run 17 Execution Tests
+        run: python -m unittest -v test_execution
 
       - name: Test Cloud Storage Precision
         env:
@@ -35,7 +52,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_V2 }}
         run: python test_precision.py
 
-      - name: Test Cloud Engine V4
+      - name: Test Cloud Engine V6
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL_V2 }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_V2 }}
