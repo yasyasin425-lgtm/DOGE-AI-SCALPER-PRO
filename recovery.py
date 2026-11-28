@@ -37,7 +37,36 @@ def main():
 
     recorded_ms = int(recorded.timestamp() * 1000)
 
-    start = (recorded_ms // 60000 + 1) * 60000
+    entry_minute = (recorded_ms // 60000) * 60000
+
+check = requests.get(
+    URL,
+    params={
+        "symbol": "DOGEUSDT",
+        "interval": "1m",
+        "startTime": entry_minute,
+        "limit": 1
+    },
+    timeout=30
+)
+
+check.raise_for_status()
+rows = check.json()
+
+if not rows or int(rows[0][0]) != entry_minute:
+    raise RuntimeError("Entry candle unavailable.")
+
+c = rows[0]
+
+print("Entry candle high:", c[2])
+print("Entry candle low:", c[3])
+
+if float(c[3]) > stop and float(c[2]) < target:
+    print("Entry candle: SAFE")
+else:
+    raise RuntimeError("Entry minute needs detailed review.")
+
+start = entry_minute + 60000
 
     response = requests.get(
         URL,
