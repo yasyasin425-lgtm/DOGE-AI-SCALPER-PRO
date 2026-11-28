@@ -1,11 +1,12 @@
 
 """
 DOGE AI SCALPER PRO
-Risk Management V1
+Risk Management V2
+Decimal Precision
 PAPER TRADING ONLY
 """
 
-import math
+from decimal import localcontext
 
 from config import (
     RISK_FRACTION,
@@ -17,224 +18,279 @@ from config import (
     ATR_MULTIPLIER,
 )
 
+from money import (
+    ZERO,
+    ONE,
+    decimal_value,
+    quantity,
+    calculate_buy,
+    calculate_sell,
+)
+
+
+RISK = decimal_value(RISK_FRACTION)
+
+DAILY_LIMIT = decimal_value(
+    DAILY_LOSS_LIMIT
+)
+
+MAX_POSITION = decimal_value(
+    MAX_POSITION_FRACTION
+)
+
+FEE = decimal_value(FEE_RATE)
+
+REWARD_RISK = decimal_value(
+    REWARD_RISK_RATIO
+)
+
+MIN_STOP = decimal_value(
+    MIN_STOP_FRACTION
+)
+
+ATR_FACTOR = decimal_value(
+    ATR_MULTIPLIER
+)
+
+
+# =====================================
+# WALLET EQUITY
+# =====================================
 
 def calculate_equity(state, price):
 
-    balance = float(state["balance"])
-    price = float(price)
+    with localcontext() as ctx:
 
-    if not math.isfinite(balance) or balance < 0:
-        raise ValueError("Invalid balance.")
+        ctx.prec = 50
 
-    if not math.isfinite(price) or price <= 0:
-        raise ValueError("Invalid market price.")
+        balance = decimal_value(
+            state["balance"]
+        )
 
-    position = state.get("position")
+        price = decimal_value(price)
 
-    if position:
+        if balance < ZERO or price <= ZERO:
 
-        qty = float(position["qty"])
+            raise ValueError(
+                "Invalid wallet or price."
+            )
 
-        if not math.isfinite(qty) or qty <= 0:
-            raise ValueError("Invalid quantity.")
+        position = state.get("position")
 
-        value = qty * price
+        if position:
 
-        balance += value * (1 - FEE_RATE)
+            qty = decimal_value(
+                position["qty"]
+            )
 
-    return balance
+            if qty <= ZERO:
 
+                raise ValueError(
+                    "Invalid quantity."
+                )
+
+            balance += (
+                qty * price * (ONE - FEE)
+            )
+
+        return balance
+
+
+# =====================================
+# DAILY LOSS PROTECTION
+# =====================================
 
 def daily_loss_reached(state):
 
-    start = float(state["day_start_balance"])
+    start = decimal_value(
+        state["day_start_balance"]
+    )
 
-    pnl = float(state["daily_realized_pnl"])
+    pnl = decimal_value(
+        state["daily_realized_pnl"]
+    )
 
-    if not math.isfinite(start) or start <= 0:
-        raise ValueError("Invalid daily balance.")
+    if start <= ZERO:
 
-    if not math.isfinite(pnl):
-        raise ValueError("Invalid daily PNL.")
+        raise ValueError(
+            "Invalid daily balance."
+        )
 
-    limit = start * DAILY_LOSS_LIMIT
+    return pnl <= -(start * DAILY_LIMIT)
 
-    return pnl <= -limit
 
+# =====================================
+# STOP LOSS AND TAKE PROFIT
+# =====================================
 
 def calculate_levels(entry, atr):
 
-    entry = float(entry)
-    atr = float(atr)
+    with localcontext() as ctx:
 
-    if not math.isfinite(entry) or entry <= 0:
-        raise ValueError("Invalid entry price.")
+        ctx.prec = 40
 
-    if not math.isfinite(atr) or atr <= 0:
-        raise ValueError("Invalid ATR.")
+        entry = decimal_value(entry)
 
-    distance = max(
-        atr * ATR_MULTIPLIER,
-        entry * MIN_STOP_FRACTION,
-    )
+        atr = decimal_value(atr)
 
-    stop = entry - distance
+        if entry <= ZERO or atr <= ZERO:
 
-    if stop <= 0:
-        raise ValueError("Invalid stop loss.")
+            raise ValueError(
+                "Invalid entry or ATR."
+            )
 
-    risk_per_unit = (
-        distance
-        + FEE_RATE * (entry + stop)
-    )
+        distance = max(
+            atr * ATR_FACTOR,
+            entry * MIN_STOP,
+        )
 
-    target = (
-        entry * (1 + FEE_RATE)
-        + REWARD_RISK_RATIO * risk_per_unit
-    ) / (1 - FEE_RATE)
+        stop = entry - distance
 
-    return {
-        "stop": stop,
-        "target": target,
-        "stop_distance": distance,
-        "risk_per_unit": risk_per_unit,
-    }
+        if stop <= ZERO:
 
+            raise ValueError(
+                "Invalid stop loss."
+            )
+
+        risk_per_unit = (
+            distance
+            + FEE * (entry + stop)
+        )
+
+        target = (
+            entry * (ONE + FEE)
+            + REWARD_RISK * risk_per_unit
+        ) / (ONE - FEE)
+
+        return {
+            "stop": stop,
+            "target": target,
+            "stop_distance": distance,
+            "risk_per_unit": risk_per_unit,
+        }
+
+
+# =====================================
+# POSITION SIZE
+# =====================================
 
 def calculate_position(state, entry, atr):
 
-    if state.get("position") is not None:
-        return None
+    with localcontext() as ctx:
 
-    if daily_loss_reached(state):
-        return None
+        ctx.prec = 40
 
-    entry = float(entry)
+        if state.get("position") is not None:
 
-    balance = float(state["balance"])
+            return None
 
-    equity = calculate_equity(
-        state,
-        entry
-    )
+        if daily_loss_reached(state):
 
-    if balance <= 0:
-        return None
+            return None
 
-    levels = calculate_levels(
-        entry,
-        atr
-    )
+        entry = decimal_value(entry)
 
-    daily_remaining = (
-        float(state["day_start_balance"])
-        * DAILY_LOSS_LIMIT
-        + float(state["daily_realized_pnl"])
-    )
+        balance = decimal_value(
+            state["balance"]
+        )
 
-    risk_cash = min(
-        equity * RISK_FRACTION,
-        daily_remaining,
-    )
+        if balance <= ZERO:
 
-    if risk_cash <= 0:
-        return None
+            return None
 
-    qty_by_risk = (
-        risk_cash
-        / levels["risk_per_unit"]
-    )
+        equity = calculate_equity(
+            state,
+            entry,
+        )
 
-    max_cost = min(
-        balance,
-        equity * MAX_POSITION_FRACTION,
-    )
+        levels = calculate_levels(
+            entry,
+            atr,
+        )
 
-    qty_by_balance = (
-        max_cost
-        / (entry * (1 + FEE_RATE))
-    )
+        daily_remaining = (
+            decimal_value(
+                state["day_start_balance"]
+            ) * DAILY_LIMIT
+            + decimal_value(
+                state["daily_realized_pnl"]
+            )
+        )
 
-    qty = min(
-        qty_by_risk,
-        qty_by_balance,
-    )
+        risk_cash = min(
+            equity * RISK,
+            daily_remaining,
+        )
 
-    if not math.isfinite(qty) or qty <= 0:
-        return None
+        if risk_cash <= ZERO:
 
-    cost = qty * entry
+            return None
 
-    entry_fee = cost * FEE_RATE
+        qty_by_risk = (
+            risk_cash
+            / levels["risk_per_unit"]
+        )
 
-    total_cost = cost + entry_fee
+        max_cost = min(
+            balance,
+            equity * MAX_POSITION,
+        )
 
-    if total_cost > balance:
-        return None
+        qty_by_balance = (
+            max_cost
+            / (entry * (ONE + FEE))
+        )
 
-    estimated_risk = (
-        qty * levels["risk_per_unit"]
-    )
+        qty = quantity(
+            min(
+                qty_by_risk,
+                qty_by_balance,
+            )
+        )
 
-    return {
-        "entry": entry,
-        "qty": qty,
-        "stop": levels["stop"],
-        "target": levels["target"],
-        "entry_fee": entry_fee,
-        "total_cost": total_cost,
-        "risk_cash": estimated_risk,
-        "reward_risk": REWARD_RISK_RATIO,
-    }
+        if qty <= ZERO:
 
+            return None
+
+        purchase = calculate_buy(
+            entry,
+            qty,
+        )
+
+        if purchase["total_cost"] > max_cost:
+
+            return None
+
+        estimated_risk = (
+            qty * levels["risk_per_unit"]
+        )
+
+        if estimated_risk > risk_cash:
+
+            return None
+
+        return {
+            **purchase,
+
+            "stop": levels["stop"],
+
+            "target": levels["target"],
+
+            "risk_cash": estimated_risk,
+
+            "reward_risk": REWARD_RISK,
+
+            "precision_version": "2.0",
+        }
+
+
+# =====================================
+# EXIT CALCULATIONS
+# =====================================
 
 def calculate_exit(position, exit_price):
 
-    entry = float(position["entry"])
-
-    qty = float(position["qty"])
-
-    exit_price = float(exit_price)
-
-    if not all(
-        math.isfinite(v) and v > 0
-        for v in (entry, qty, exit_price)
-    ):
-        raise ValueError("Invalid exit data.")
-
-    entry_fee = float(
-        position.get(
-            "entry_fee",
-            entry * qty * FEE_RATE,
-        )
+    return calculate_sell(
+        position,
+        exit_price,
     )
-
-    if not math.isfinite(entry_fee) or entry_fee < 0:
-        raise ValueError("Invalid entry fee.")
-
-    exit_fee = (
-        exit_price * qty * FEE_RATE
-    )
-
-    gross_pnl = (
-        exit_price - entry
-    ) * qty
-
-    net_pnl = (
-        gross_pnl
-        - entry_fee
-        - exit_fee
-    )
-
-    proceeds = (
-        exit_price * qty
-        - exit_fee
-    )
-
-    return {
-        "gross_pnl": gross_pnl,
-        "net_pnl": net_pnl,
-        "entry_fee": entry_fee,
-        "exit_fee": exit_fee,
-        "proceeds": proceeds,
-    }
