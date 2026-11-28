@@ -1,9 +1,9 @@
 
 """
 DOGE AI SCALPER PRO
-Cloud Engine - Phase 3
+Cloud Engine - Phase 4
 PAPER TRADING ONLY
-API PROTECTION TEST
+ATOMIC STORAGE TEST
 """
 
 from storage import (
@@ -17,44 +17,43 @@ from storage import (
 def main():
 
     print("DOGE AI SCALPER PRO")
-    print("MODE: API PROTECTION TEST")
+    print("MODE: ATOMIC STORAGE TEST")
 
     state = load_state()
     history = load_signal_history()
-    last_candle = load_last_engine_candle()
 
-    if last_candle is not None:
+    if load_last_engine_candle() is not None:
         raise RuntimeError(
-            "Unexpected existing engine cycle."
+            "Existing engine cycle detected."
         )
 
-    print("Supabase connection: OK")
-    print("Wallet loaded: OK")
+    result = commit_engine_cycle(
+        candle_time=1,
+        expected_state=state,
+        new_state=state,
+        signals=[],
+        enable_write=True,
+    )
 
-    try:
+    if result is not True:
+        raise RuntimeError("Save test failed.")
 
-        commit_engine_cycle(
-            candle_time=1,
-            expected_state={},
-            new_state=state,
-            signals=[],
-            enable_write=True,
-        )
+    print("API atomic save: OK")
 
-    except RuntimeError as error:
+    duplicate = commit_engine_cycle(
+        candle_time=1,
+        expected_state=state,
+        new_state=state,
+        signals=[],
+        enable_write=True,
+    )
 
-        if "HTTP 400" not in str(error):
-            raise
-
-        if "P0001" not in str(error):
-            raise
-
-        print("API rejection: OK")
-
-    else:
+    if duplicate is not False:
         raise RuntimeError(
-            "Expected database rejection."
+            "Duplicate protection failed."
         )
+
+    print("Duplicate protection: OK")
 
     if load_state() != state:
         raise RuntimeError("Wallet changed.")
@@ -62,13 +61,13 @@ def main():
     if load_signal_history() != history:
         raise RuntimeError("Signals changed.")
 
-    if load_last_engine_candle() != last_candle:
-        raise RuntimeError("Engine cycle changed.")
+    if load_last_engine_candle() != 1:
+        raise RuntimeError("Cycle verification failed.")
 
     print("Wallet unchanged: OK")
     print("Signals unchanged: OK")
-    print("Engine cycles unchanged: OK")
-    print("Cloud engine phase 3: SUCCESS")
+    print("Engine cycle saved: OK")
+    print("Cloud engine phase 4: SUCCESS")
 
 
 if __name__ == "__main__":
