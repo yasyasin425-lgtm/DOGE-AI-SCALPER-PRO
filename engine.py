@@ -1,9 +1,9 @@
 
 """
 DOGE AI SCALPER PRO
-Cloud Engine - Phase 2
+Cloud Engine - Phase 3
 PAPER TRADING ONLY
-SAFE TEST MODE
+API PROTECTION TEST
 """
 
 from storage import (
@@ -17,43 +17,58 @@ from storage import (
 def main():
 
     print("DOGE AI SCALPER PRO")
-    print("MODE: SAFE TEST")
+    print("MODE: API PROTECTION TEST")
 
     state = load_state()
     history = load_signal_history()
     last_candle = load_last_engine_candle()
 
+    if last_candle is not None:
+        raise RuntimeError(
+            "Unexpected existing engine cycle."
+        )
+
     print("Supabase connection: OK")
     print("Wallet loaded: OK")
-    print("Signals:", len(history))
-    print("Closed trades:", len(state["closed_trades"]))
-    print("Open position:", bool(state["position"]))
-    print("Last engine candle:", last_candle)
 
     try:
 
         commit_engine_cycle(
             candle_time=1,
-            expected_state=state,
+            expected_state={},
             new_state=state,
             signals=[],
-            enable_write=False,
+            enable_write=True,
         )
 
     except RuntimeError as error:
 
-        if str(error) != "Engine writes are disabled.":
+        if "HTTP 400" not in str(error):
             raise
 
-        print("Write protection: OK")
+        if "P0001" not in str(error):
+            raise
+
+        print("API rejection: OK")
 
     else:
         raise RuntimeError(
-            "Write protection failed."
+            "Expected database rejection."
         )
 
-    print("Writes enabled: False")
-    print("Cloud engine phase 2: SUCCESS")
+    if load_state() != state:
+        raise RuntimeError("Wallet changed.")
+
+    if load_signal_history() != history:
+        raise RuntimeError("Signals changed.")
+
+    if load_last_engine_candle() != last_candle:
+        raise RuntimeError("Engine cycle changed.")
+
+    print("Wallet unchanged: OK")
+    print("Signals unchanged: OK")
+    print("Engine cycles unchanged: OK")
+    print("Cloud engine phase 3: SUCCESS")
 
 
 if __name__ == "__main__":
