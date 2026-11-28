@@ -1,5 +1,4 @@
 
-
 name: Test Cloud Engine
 
 on:
@@ -25,9 +24,9 @@ jobs:
 
       - name: Check Python files
         run: |
-          python -m py_compile config.py risk.py strategy.py paper_engine.py learning.py storage.py engine.py test_paper_engine.py test_precision.py
+          python -m py_compile config.py money.py risk.py strategy.py paper_engine.py learning.py storage.py engine.py test_paper_engine.py test_precision.py
 
-      - name: Run Paper Engine Safety Tests
+      - name: Run 17 Paper Engine Tests
         run: python -m unittest -v test_paper_engine
 
       - name: Test Cloud Storage Precision
@@ -36,7 +35,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_V2 }}
         run: python test_precision.py
 
-      - name: Test Cloud Engine V3
+      - name: Test Cloud Engine V4
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL_V2 }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_V2 }}
