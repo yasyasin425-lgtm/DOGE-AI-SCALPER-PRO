@@ -1,8 +1,8 @@
 
 """
 DOGE AI SCALPER PRO
-Cloud Engine V5
-Market Execution Validation
+Cloud Engine V6
+Integrated Execution Engine
 DRY RUN - PAPER TRADING ONLY
 """
 
@@ -31,7 +31,10 @@ from execution import (
     validate_entry,
 )
 
-from paper_engine import run_cycle
+from paper_engine_v3 import (
+    run_cycle,
+    run_exit_cycle,
+)
 
 from learning import (
     evaluate_signals,
@@ -83,7 +86,7 @@ def validate_wallet(state):
 
     if not isinstance(
         balance, (Decimal, int)
-    ):
+    ) or isinstance(balance, bool):
 
         raise RuntimeError(
             "Exact balance required."
@@ -110,10 +113,6 @@ def validate_wallet(state):
         )
 
 
-# =====================================
-# PRECISION VALIDATION
-# =====================================
-
 def validate_precision(state):
 
     encoded = simplejson.dumps(
@@ -135,7 +134,7 @@ def validate_precision(state):
 
 
 # =====================================
-# EXECUTION VALIDATION
+# ENTRY EXECUTION
 # =====================================
 
 def prepare_execution(state, snapshot):
@@ -181,8 +180,6 @@ def prepare_execution(state, snapshot):
     if execution["allowed"]:
 
         print("Market quote: OK")
-        print("Spread protection: OK")
-        print("Price deviation protection: OK")
         print("Entry validation: PASSED")
 
     else:
@@ -196,13 +193,105 @@ def prepare_execution(state, snapshot):
 
 
 # =====================================
+# SIGNAL EVALUATION
+# =====================================
+
+def process_learning(
+    state,
+    history,
+    signals,
+    candles,
+):
+
+    combined = {
+        int(item["candle_time"]):
+            deepcopy(item)
+        for item in history
+    }
+
+    for item in signals:
+
+        key = int(item["candle_time"])
+
+        if key not in combined:
+
+            combined[key] = deepcopy(item)
+
+    eligible = [
+        item
+        for item in combined.values()
+        if item.get("strategy_version") == "1.0"
+    ]
+
+    updated = evaluate_signals(
+        eligible,
+        candles,
+    )
+
+    for item in updated:
+
+        combined[
+            int(item["candle_time"])
+        ] = item
+
+    report = learning_report(
+        state,
+        list(combined.values()),
+    )
+
+    print("Signal evaluation: OK")
+    print("Learning module: OK")
+
+    print(
+        "Learning status:",
+        report["status"],
+    )
+
+
+# =====================================
+# CLOUD DATA PROTECTION
+# =====================================
+
+def verify_cloud(
+    original_state,
+    original_history,
+    checkpoint,
+):
+
+    if load_state_exact() != original_state:
+
+        raise RuntimeError(
+            "Cloud wallet changed."
+        )
+
+    if (
+        load_signal_history(exact=True)
+        != original_history
+    ):
+
+        raise RuntimeError(
+            "Cloud history changed."
+        )
+
+    if load_last_engine_candle() != checkpoint:
+
+        raise RuntimeError(
+            "Cloud checkpoint changed."
+        )
+
+    print("Cloud wallet unchanged: OK")
+    print("Cloud history unchanged: OK")
+    print("Cloud checkpoint unchanged: OK")
+
+
+# =====================================
 # MAIN ENGINE
 # =====================================
 
 def main():
 
     print("DOGE AI SCALPER PRO")
-    print("Cloud Engine V5")
+    print("Cloud Engine V6")
     print("MODE: DRY RUN")
     print("PRECISION: DECIMAL")
 
@@ -229,52 +318,78 @@ def main():
     print("Supabase connection: OK")
     print("Exact wallet loaded: OK")
 
-    snapshot, candles = analyze_market()
+    # Existing positions have priority.
+    # Exit monitoring does not require
+    # a new market candle.
 
-    candle_time = int(
-        snapshot["candle_time"]
-    )
+    if state.get("position") is not None:
 
-    if (
-        checkpoint is not None
-        and candle_time <= checkpoint
-    ):
+        print("Position monitoring: ACTIVE")
 
-        print("Candle already processed.")
-        print("Database writes: DISABLED")
+        result = run_exit_cycle(
+            state
+        )
 
-        return
+        simulated_state = result["state"]
 
-    print("Binance market data: OK")
-    print("Technical indicators: OK")
-    print("Signal:", snapshot["signal"])
-    print("Score:", snapshot["score"], "/ 5")
+        decision = result["decision"]
 
-    # Prepare execution information
+        print("Independent exit cycle: OK")
 
-    prepared = prepare_execution(
-        state,
-        snapshot,
-    )
+    else:
 
-    # Temporary entry protection
-    # Until Paper Engine V3 is installed
+        snapshot, candles = analyze_market()
 
-    simulation = deepcopy(prepared)
+        candle_time = int(
+            snapshot["candle_time"]
+        )
 
-    if state.get("position") is None:
+        print("Binance market data: OK")
+        print("Technical indicators: OK")
 
-        simulation["signal"] = "HOLD"
+        print("Signal:", snapshot["signal"])
 
-    result = run_cycle(
-        state,
-        simulation,
-        candles,
-    )
+        print(
+            "Score:",
+            snapshot["score"],
+            "/ 5",
+        )
 
-    simulated_state = result["state"]
+        if (
+            checkpoint is not None
+            and candle_time <= checkpoint
+        ):
 
-    decision = result["decision"]
+            simulated_state = deepcopy(state)
+
+            decision = {
+                "action": "HOLD",
+                "reason": "Candle already processed",
+            }
+
+        else:
+
+            prepared = prepare_execution(
+                state,
+                snapshot,
+            )
+
+            result = run_cycle(
+                state,
+                prepared,
+                candles,
+            )
+
+            simulated_state = result["state"]
+
+            decision = result["decision"]
+
+            process_learning(
+                simulated_state,
+                history,
+                result["signals"],
+                candles,
+            )
 
     validate_wallet(simulated_state)
 
@@ -282,67 +397,17 @@ def main():
 
     print("Risk management: OK")
     print("Financial precision: OK")
+    print("Paper Engine V3.1: OK")
 
     print(
         "Simulated action:",
         decision["action"],
     )
 
-    # Preserve original market signal
-
-    for item in result["signals"]:
-
-        item["signal"] = snapshot["signal"]
-
-        item["execution"] = deepcopy(
-            prepared["execution"]
-        )
-
-    # Signal history evaluation
-
-    combined = {
-        int(item["candle_time"]):
-            deepcopy(item)
-        for item in history
-    }
-
-    for item in result["signals"]:
-
-        key = int(item["candle_time"])
-
-        if key not in combined:
-
-            combined[key] = deepcopy(item)
-
-    updated = evaluate_signals(
-        list(combined.values()),
-        candles,
-    )
-
-    for item in updated:
-
-        combined[
-            int(item["candle_time"])
-        ] = item
-
-    simulated_history = list(
-        combined.values()
-    )
-
-    report = learning_report(
-        simulated_state,
-        simulated_history,
-    )
-
-    print("Signal evaluation: OK")
-    print("Learning module: OK")
-
     print(
-        "Learning status:",
-        report["status"],
+        "Decision reason:",
+        decision["reason"],
     )
-
-    # Protect original cloud data
 
     if state != original_state:
 
@@ -356,34 +421,15 @@ def main():
             "Original history modified."
         )
 
-    if load_state_exact() != original_state:
+    verify_cloud(
+        original_state,
+        original_history,
+        checkpoint,
+    )
 
-        raise RuntimeError(
-            "Cloud wallet changed."
-        )
-
-    if (
-        load_signal_history(exact=True)
-        != original_history
-    ):
-
-        raise RuntimeError(
-            "Cloud history changed."
-        )
-
-    if load_last_engine_candle() != checkpoint:
-
-        raise RuntimeError(
-            "Cloud checkpoint changed."
-        )
-
-    print("Original wallet unchanged: OK")
-    print("Cloud history unchanged: OK")
-    print("Engine checkpoint unchanged: OK")
-    print("New entries: TEMPORARILY DISABLED")
     print("Database writes: DISABLED")
     print("Live trading: DISABLED")
-    print("Cloud Engine V5: SUCCESS")
+    print("Cloud Engine V6: SUCCESS")
 
 
 if __name__ == "__main__":
