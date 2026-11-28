@@ -1,4 +1,5 @@
 
+
 name: Test Cloud Engine
 
 on:
@@ -10,7 +11,7 @@ permissions:
 jobs:
   test-engine:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -19,9 +20,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - run: pip install requests
+      - name: Install dependencies
+        run: pip install requests pandas numpy
 
-      - name: Test Cloud Engine
+      - name: Check Python files
+        run: |
+          python -m py_compile config.py risk.py strategy.py paper_engine.py learning.py storage.py engine.py
+
+      - name: Test Cloud Engine V3
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL_V2 }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_V2 }}
