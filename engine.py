@@ -1,73 +1,73 @@
 
 """
 DOGE AI SCALPER PRO
-Cloud Engine - Phase 4
+Cloud Engine V2
 PAPER TRADING ONLY
-ATOMIC STORAGE TEST
+STANDBY MODE
 """
 
 from storage import (
     load_state,
     load_signal_history,
     load_last_engine_candle,
-    commit_engine_cycle,
 )
 
 
 def main():
 
     print("DOGE AI SCALPER PRO")
-    print("MODE: ATOMIC STORAGE TEST")
+    print("Cloud Engine V2")
+    print("MODE: PAPER TRADING")
+    print("STATUS: STANDBY")
 
     state = load_state()
     history = load_signal_history()
+    last_candle = load_last_engine_candle()
 
-    if load_last_engine_candle() is not None:
+    required = {
+        "balance",
+        "realized_pnl",
+        "position",
+        "closed_trades",
+    }
+
+    if not required.issubset(state):
+        raise RuntimeError("Invalid wallet.")
+
+    if float(state["balance"]) < 0:
+        raise RuntimeError("Invalid balance.")
+
+    if state["position"] is not None:
         raise RuntimeError(
-            "Existing engine cycle detected."
+            "Unexpected open position."
         )
 
-    result = commit_engine_cycle(
-        candle_time=1,
-        expected_state=state,
-        new_state=state,
-        signals=[],
-        enable_write=True,
-    )
+    recovered = [
+        trade
+        for trade in state["closed_trades"]
+        if trade.get("recovery_id")
+        == "DOGE-20261127-0452"
+    ]
 
-    if result is not True:
-        raise RuntimeError("Save test failed.")
-
-    print("API atomic save: OK")
-
-    duplicate = commit_engine_cycle(
-        candle_time=1,
-        expected_state=state,
-        new_state=state,
-        signals=[],
-        enable_write=True,
-    )
-
-    if duplicate is not False:
+    if len(recovered) != 1:
         raise RuntimeError(
-            "Duplicate protection failed."
+            "Recovery verification failed."
         )
 
-    print("Duplicate protection: OK")
+    if last_candle is None:
+        raise RuntimeError(
+            "Engine checkpoint missing."
+        )
 
-    if load_state() != state:
-        raise RuntimeError("Wallet changed.")
-
-    if load_signal_history() != history:
-        raise RuntimeError("Signals changed.")
-
-    if load_last_engine_candle() != 1:
-        raise RuntimeError("Cycle verification failed.")
-
-    print("Wallet unchanged: OK")
-    print("Signals unchanged: OK")
-    print("Engine cycle saved: OK")
-    print("Cloud engine phase 4: SUCCESS")
+    print("Database connection: OK")
+    print("Wallet integrity: OK")
+    print("Historical recovery: VERIFIED")
+    print("Engine checkpoint: OK")
+    print("Signal history: OK")
+    print("Open position: NONE")
+    print("New trades: DISABLED")
+    print("Database writes: DISABLED")
+    print("Cloud Engine V2: READY")
 
 
 if __name__ == "__main__":
