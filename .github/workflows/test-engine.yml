@@ -1,5 +1,4 @@
 
-
 name: Test Cloud Engine
 
 on:
@@ -25,7 +24,10 @@ jobs:
 
       - name: Check Python files
         run: |
-          python -m py_compile config.py risk.py strategy.py paper_engine.py learning.py storage.py engine.py
+          python -m py_compile config.py risk.py strategy.py paper_engine.py learning.py storage.py engine.py test_paper_engine.py
+
+      - name: Run Paper Engine Safety Tests
+        run: python -m unittest -v test_paper_engine
 
       - name: Test Cloud Engine V3
         env:
